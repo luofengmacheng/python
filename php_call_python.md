@@ -28,7 +28,7 @@ cmd > run.log 2>&1
 
 终于发现了错误信息：
 
-![](https://github.com/luofengmacheng/web_learning/blob/master/php/pics/php_call_python_error.png)
+![](https://github.com/luofengmacheng/web_learning/blob/master/python/pics/php_call_python_error.png)
 
 ### 5 解决问题
 
