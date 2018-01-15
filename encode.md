@@ -164,7 +164,26 @@ UnicodeDecodeError: ‘ascii’ codec can’t decode byte...
 * 使用encode和decode进行编码转换时，必须要明确原编码和目的编码
 * 当有IO时，在输入时，将字符编码转换为unicode，而输出时，将字符编码转换为其它编码。在中间进行处理时，统一使用unicode，这样能防止由于编码的不同而造成的乱码问题。
 
-### 4 总结
+### 4 python访问MySQL数据库出现的编码问题
+
+> 背景：之前程序使用MySQLdb访问MySQL数据库，由于要使用连接池的方式，需要改成用DBUtils访问数据库。
+
+#### 4.1 LookupErro: unknow encoding: utf8mb4
+
+``` python
+import codecs
+codecs.register(lambda name: codecs.lookup('utf8') if name == 'utf8mb4' else None)
+```
+
+#### 4.2 UnicodeEncodeError: 'latin-1' codec can't encode characters in position 60-62: ordinal not in range(256)
+
+DBUtils是连接池包，底层是调用MySQLdb创建连接，调用MySQLdb创建连接时有个字符集的参数：
+
+``` python
+connection = MySQLdb.connect(... charset = "utf8", use_unicode = True)
+```
+
+### 5 总结
 
 * 中文环境下，尽量将locale设置为UTF-8
 * 查看文件编码时，可以通过hexdump或者od等工具进行查看，不要相信vi中的set fileencoding

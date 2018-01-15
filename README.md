@@ -9,3 +9,5 @@
 4 [编码问题](https://github.com/luofengmacheng/python/blob/master/encode.md)
 
 5 [异常处理](https://github.com/luofengmacheng/python/blob/master/exception.md)
+
+6 [python中的正则表达式使用方法](https://github.com/luofengmacheng/python/blob/master/regex.md)
