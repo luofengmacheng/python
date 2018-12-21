@@ -11,3 +11,7 @@
 5 [异常处理](https://github.com/luofengmacheng/python/blob/master/exception.md)
 
 6 [python中的正则表达式使用方法](https://github.com/luofengmacheng/python/blob/master/regex.md)
+
+7 [python简单地使用gearman](https://github.com/luofengmacheng/python/blob/master/gearman_simple_demo.md)
+
+8 
