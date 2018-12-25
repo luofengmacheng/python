@@ -14,4 +14,5 @@
 
 7 [python简单地使用gearman](https://github.com/luofengmacheng/python/blob/master/gearman_simple_demo.md)
 
-8 
+8 [使用supervisor和superlance监控进程](https://github.com/luofengmacheng/python/blob/master/monitor_process_with_supervisor_and_superlance.md)
+
