@@ -54,8 +54,119 @@ celery和gearman都可以实现类似任务分发的功能：提交任务给组�
 
 ### 3 生产者和消费者模式(包含任务队列)
 
-生产者和消费者模式是操作系统中最常讲的关于进程互斥和同步的问题：生产者生产消息，将消息放入到队列，消费者取出队列中的消息进行消费，对于队列而言，由于是多个进程都可以访问的共享资源，在访问时需要加锁，这是进程的互斥，而对于整个消息的产生和消费而言，只有队列有空间时才允许生产者生产消息，只有队列不空时才允许消费者消费消息，这是进程的同步。
+生产者和消费者模式是操作系统课程中最常讲的关于进程互斥和同步的例子：生产者生产消息，将消息放入到队列，消费者取出队列中的消息进行消费，对于队列而言，由于是多个进程都可以访问的共享资源，在访问时需要加锁，这是进程的互斥，而对于整个消息的产生和消费而言，只有队列有空间时才允许生产者生产消息，只有队列不空时才允许消费者消费消息，这是进程的同步。
 
+下面就以python中实现简单的生产者和消费者模式：
 
+``` python
+import threading
+import random
+import queue
 
-### 4 
+# 队列，用于生产者和消费者之间的缓冲
+que = queue.Queue(10)
+
+class Producer(threading.Thread):
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+    
+    def run(self):
+        global que
+        while True:
+            data = random.randint(100, 999)
+            que.put(data)
+            print("producer send data: {}".format(data))
+
+class Consumer(threading.Thread):
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+    
+    def run(self):
+        global que
+        while True:
+            data = que.get()
+            print("consumer receive data: {}".format(data))
+
+p = Producer()
+c = Consumer()
+p.start()
+c.start()
+```
+
+上面用两个线程分别模拟了生产者和消费者：
+
+* 这里的队列用的是标准库的queue，该队列是线程安全的，在多个线程进行操作时可以保证不会出现并发访问的问题，因此，在访问队列时没有加锁
+* 向队列中放入数据和从队列中获取数据用的是队列自身的操作，这两个操作默认是阻塞的：get()时如果没有数据，则等待；put()时如果没有空间，则等待。
+该操作会使得该线程直接阻塞，但是该线程还是在执行中，这个也会浪费计算资源
+
+为了解决上面的第二个问题，当队列中没有数据时，发起get()操作时需要使得线程休眠。此时，需要使用到条件变量进行线程同步。
+
+``` python
+import threading
+import time
+import random
+import queue
+
+# 条件变量
+con = threading.Condition()
+que = queue.Queue(10)
+
+class Producer(threading.Thread):
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+    
+    def run(self):
+        global que
+        global con
+        while True:
+            data = random.randint(100, 999)
+            que.put(data)
+
+            con.acquire()
+            con.notify()
+            con.release()
+            print("producer send data: {}".format(data))
+
+class Consumer(threading.Thread):
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+    
+    def run(self):
+        global que
+        global con
+        while True:
+            con.acquire()
+            con.wait()
+            con.release()
+            while True:
+                try:
+                    # 采用非阻塞方式从队列中取出数据
+                    # 如果队列为空，则抛出Empty异常
+                    data = que.get(False)
+                    print("consumer receive data: {}".format(data))
+                    time.sleep(1)
+                    que.task_done()
+                except queue.Empty as exp:
+                    break
+                except Exception as exp:
+                    print("exception: {}".format(str(exp)))
+                    break
+```
+
+这里使用了线程的Condition条件变量对生产者和消费者进行线程同步：当生产者生成数据后，会给等待该条件的线程发送消息；消费者采用非阻塞的方式从队列中取出数据，如果队列中有数据，则直接取出，当消费完数据后，给队列一个完成的标记(queue.task_done()，也可以不加，但是如果要旁路用join()判断队列是否为空时则必须要加)，如果队列中没有数据，则抛出Empty异常，跳出内层的while循环，于是会执行wait()等待条件的发生。通过这种方式，当消费者线程无法获取数据时，线程会休眠，避免计算资源的浪费。
+
+### 4 gearman中worker的生产者和消费者模式
+
+上文中提到，当单个worker收到任务后，可以用多个线程处理任务，提高系统的吞吐量，这里会提到另外两个词：任务队列和线程池。
+
+worker在收到任务后，可以将任务放到任务队列中，worker会管理由多个线程组成的线程池，每个线程会都会尝试从任务队列中获取任务，然后进行处理，因此，虽然worker名义上是处理任务的工作者线程，也可以在该进程中用生产者和消费者模式最大化系统的处理性能。
+
+### 5 小结
+
+本文从任务流程系统出发，介绍了任务流程系统实现的常见的两种方式以及它们的优缺点，然后介绍了celery和gearman，针对gearman，给出了分布式任务处理的架构，同时为了提高系统的处理性能，在worker进程中使用了生产者和消费者模式。
+
+因此，celery和gearman此种任务分发框架用于处理多机之间的任务分发，而在单机上使用生产者和消费者模式来提高处理性能。
