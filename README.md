@@ -16,3 +16,10 @@
 
 8 [使用supervisor和superlance监控进程](https://github.com/luofengmacheng/python/blob/master/monitor_process_with_supervisor_and_superlance.md)
 
+9 [使用SQLALchemy操作数据库(ORM)](https://github.com/luofengmacheng/python/blob/master/orm_with_sqlalchemy.md)
+
+10 [python中常用的知识点](https://github.com/luofengmacheng/python/blob/master/python_tips.md)
+
+11 [八大排序算法(Python实现)](https://github.com/luofengmacheng/python/blob/master/sort_algorithm.md)
+
+12 [任务流程系统设计以及其中的生产者和消费者模式应用](https://github.com/luofengmacheng/python/blob/master/producer_consumer.md)
