@@ -29,3 +29,5 @@
 14 [python中的多线程编程](https://github.com/luofengmacheng/python/blob/master/multi_thread_program.md)
 
 15 [问和答](https://github.com/luofengmacheng/python/blob/master/question_and_answer.md)
+
+16 [vue+django搭建web开发环境](https://github.com/luofengmacheng/python/blob/master/django_with_vue.md)
