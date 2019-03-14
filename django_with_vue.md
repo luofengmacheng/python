@@ -220,9 +220,92 @@ django的模版引擎的语法与jinja2类似，模版渲染需要注意三个�
 
 django也是一个MVC模式的框架，控制器通过urls实现，模型通过ORM实现，于是大部分的逻辑都在视图中：控制器将请求转发给视图，视图通过调用模型处理请求，然后确认是否要通过模版渲染返回页面还是直接返回数据。
 
-### 2 部署vue开发环境
+### 2 部署vue开发环境(vue+yarn+webpack)
 
+安装开发工具：
 
+* nodejs
+* yarn(包管理器，类似于npm、yum等)
 
-### 3 前后端分离和前后端调用
+关于前端构建工具：构建工具就是为了简化我们日常的机械重复的事情。
+
+用户从浏览器中看到的网站只有HTML+JS+CSS，但是开发人员在开发时可以用其它不同的语言，例如，可以用Less开发CSS，用Jade开发HTML，那么在开发完成后就需要将这些文件编译成浏览器可以识别的HTML+JS+CSS，而且在生成这些文件的同时也会进行压缩合并，完成这项任务的就是前端构建工具。
+
+下面正式开始进行开发环境的搭建吧!!!
+
+安装好nodejs和yarn后，在全局环境安装vue-cli：
+
+``` shell
+yarn global add vue-cli
+```
+
+然后就可以查看vue的版本号：
+
+``` shell
+vue -V
+```
+
+安装好了vue-cli，接下来就是创建工程，创建的方式可以参看vue-cli中的README.md，具体有三种方式：
+
+* vue init <template-name> <project-name> 该命令会从github上vue的官方模版中下载
+* vue init username/repo <project-name> 该命令会从github上下载对应的仓库中的模版
+* vue init ~/fs/path/to-custom-template <project-name> 该命令会使用本地的模版
+
+由于网络策略限制，用vue下载模版时不能连接到github，又没有找到配置代理的方式，因此，这里使用本地的模版：
+
+从[github](https://github.com/vuejs-templates/webpack)上下载模版，并放到本地的D:\www\vue_demo目录下，然后解压就会得到目录D:\www\vue_demo\webpack-develop，然后执行init命令即可(初始化命令执行过程中需要确认各种配置，一路enter就行)：
+
+``` shell
+vue init D:\www\vue_demo\webpack-develop vue_test
+```
+
+然后进入vue_test目录执行npm就可以启动项目：
+
+``` shell
+cd vue_test
+npm install
+npm run dev
+```
+
+接下来就可以看到以下文字：
+
+```
+DONE Compiled successfully in 4208ms
+
+Your application is running here: http://localhost:8080
+```
+
+然后在浏览器中打开http://localhost:8080，就可以看到vue的欢迎界面，开始vue之旅吧。
+
+### 3 使用vue进行基本的前端开发
+
+进行前端开发需要安装ui库，这里使用element-ui。
+
+```
+npm i element-ui -S
+```
+
+#### 3.1 首页导航及路由配置
+
+开发一个网站，最开始需要完成的就是网站的首页导航结构。
+
+网站的首页打开的是index.html，可以在里面修改网站的title。
+
+然后剩下的就是4个比较重要的内容：
+
+* main.js 入口文件，在里面加载需要用到的组件，例如，上面在安装element-ui后，需要在main.js中导入该组件：
+
+``` javascript
+import ElementUI from 'element-ui'
+import 'element-ui/lib/theme-chalk/index.css'
+
+Vue.use(ElementUI)
+```
+
+* App.vue 在vue中，每个vue文件都是一个页面模版，其中包含该页面的所有内容，而App.vue就是整个网站的顶级组件
+* router/index.js 
+
+#### 3.2 表格操作及与后台交互
+
+### 4 前后端分离和前后端调用
 
