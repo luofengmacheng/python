@@ -279,6 +279,61 @@ Your application is running here: http://localhost:8080
 
 ### 3 使用vue进行基本的前端开发
 
+这里使用vscode进行开发，在开始开发之前，还需要安装几个插件：
+
+* eslint
+* prettier-Code formatter
+* vetur
+
+然后进行以下配置：
+
+``` javascript
+{
+  "editor.fontSize": 18,
+  "workbench.editor.enablePreview": false, //打开文件不覆盖
+  "search.followSymlinks": false, //关闭rg.exe进程
+  "editor.minimap.enabled": false, //关闭快速预览
+  "files.autoSave": "onFocusChange", //打开自动保存
+  "editor.lineNumbers": "on", //开启行数提示
+  "editor.quickSuggestions": {
+    //开启自动显示建议
+    "other": true,
+    "comments": true,
+    "strings": true
+  },
+  "editor.tabSize": 2, //制表符符号eslint
+  "editor.formatOnSave": true, //每次保存自动格式化
+  "eslint.autoFixOnSave": true, // 每次保存的时候将代码按eslint格式进行修复
+  "prettier.eslintIntegration": true, //让prettier使用eslint的代码格式进行校验
+  "prettier.semi": false, //去掉代码结尾的分号
+  "prettier.singleQuote": false, //使用带引号替代双引号
+  "javascript.format.insertSpaceBeforeFunctionParenthesis": true, //让函数(名)和后面的括号之间加个空格
+  "vetur.format.defaultFormatter.html": "js-beautify-html", //格式化.vue中html
+  "vetur.format.defaultFormatter.js": "vscode-typescript", //让vue中的js按编辑器自带的ts格式进行格式化
+  "vetur.format.defaultFormatterOptions": {
+    "js-beautify-html": {
+      "wrap_attributes": "force-aligned" //属性强制折行对齐
+    }
+  },
+  "eslint.validate": [
+    //开启对.vue文件中错误的检查
+    "javascript",
+    "javascriptreact",
+    {
+      "language": "html",
+      "autoFix": true
+    },
+    {
+      "language": "vue",
+      "autoFix": true
+    }
+  ],
+  "editor.wordWrap": "on",
+}
+```
+
+此时，只要ctl+s保存文件就可以进行格式化了，而且格式化后的代码可以通过eslint的检查。
+
 进行前端开发需要安装ui库，这里使用element-ui。
 
 ```
@@ -303,9 +358,99 @@ Vue.use(ElementUI)
 ```
 
 * App.vue 在vue中，每个vue文件都是一个页面模版，其中包含该页面的所有内容，而App.vue就是整个网站的顶级组件
-* router/index.js 
+* router/index.js 在其中可以进行路由配置，定义路由和组件的关联关系
+* components/ 组件目录，为了模块化管理整个网站，将整个网站分割成了很多个组件，每个组件就是一个模块，一个模块中包含若干个vue文件
 
-#### 3.2 表格操作及与后台交互
+了解了上述内容后，就开始进行网站导航的实现。
+
+安装好element-ui后，可以到element-ui官网查看导航的代码，在components/Home.vue中用el-menu添加侧边栏菜单：
+
+``` html
+<template>
+  <el-container id="app">
+    <el-aside width="200px" style="background-color: rgb(238, 241, 246)">
+      <el-menu router default-active="schema_config" theme="dark">
+        <el-menu-item>自动化容灾演练平台</el-menu-item>
+        <el-menu-item index="schema_config">演练方案</el-menu-item>
+        <el-menu-item index="history">演练记录</el-menu-item>
+      </el-menu>
+    </el-aside>
+
+    <el-container>
+      <router-view></router-view>
+    </el-container>
+  </el-container>
+</template>
+```
+
+上述代码中与el相关的可以到element-ui官网查看，这里主要关注的是router-view。在开发导航菜单时，经常需要实现的是点击某个菜单时，只有其中的展示数据的区域的页面切换，菜单是不变化的，而且通过这种方式，也可以将整个网站组成一个有层级关系的架构，而router-view就是用来实现这个功能的。当用户点击演练方案这个菜单时，就会打开/schema_config路由，根据路由配置找到需要渲染的组件，然后会将组件渲染在router-view中，从而实现点击不同菜单就可以打开不同页面。
+
+通过上面的方式就可以实现一个导航菜单，剩下一个问题就是路由配置。
+
+初始的webpack框架中路由是写在router/index.js中的，但是当页面很多路由比较复杂时就需要按照模块分开放置每个模块的路由：
+
+例如，登录的路由配置如下：
+
+router/auth.js
+``` javascript
+import Login from '@/components/auth/Login'
+import Logout from '@/components/auth/Logout'
+
+export default [
+  {
+    path: 'auth',
+    name: 'auth',
+    children: [{
+      path: 'login',
+      component: Login
+    }, {
+      path: 'logout',
+      component: Logout
+    }
+    ]
+  }
+]
+```
+
+然后将该路由配置整合到总路由配置中：
+
+router/routerConfig.js
+``` javascript
+import authRoutes from './auth'
+
+var routes = []
+routes = routes.concat(authRoutes)
+
+export default routes
+```
+
+最后，将该路由配置
+
+router/index.js
+``` javascript
+import Vue from 'vue'
+import VueRouter from 'vue-router'
+import home from '@/components/Home'
+import routerConfig from './routerConfig'
+
+Vue.use(VueRouter)
+
+export default new VueRouter({
+  mode: 'history',
+  routes: [{
+    path: '/',
+    component: home,
+    children: routerConfig
+  }]
+})
+```
+
+#### 3.2 表单操作
+
+表单和表格是最常用的需要与后台交互的组件，关于前端的方式不再赘述，可以参看element-ui官网，当前台页面搞好后，剩下的就是如何与后台交互进行数据的填充。
+
+
+#### 3.3 表格操作
 
 ### 4 前后端分离和前后端调用
 
