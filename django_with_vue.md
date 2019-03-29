@@ -130,6 +130,9 @@ urlpatterns = [
 ``` python
 from django.urls import path
 
+# 如果不加下面这行代码，django2会报错：Specifying a namespace in include() without providing an app_name
+app_name = 'app1'
+
 urlpatterns = [
     path('index', views.news.index)
 ]
@@ -198,6 +201,13 @@ pymysql.install_as_MySQLdb()
 
 * 业务逻辑只与django的API与数据库交互，切换数据库是很方便的
 * 通过定义模型，django可以自动生成表结构，在系统迁移时可以方便地创建数据库
+
+新建模型后，需要执行迁移语句才能生成表结构：
+
+```
+python manage.py makemigrations
+python manage.py migrate
+```
 
 ##### 1.3.6 模版渲染
 
@@ -449,8 +459,137 @@ export default new VueRouter({
 
 表单和表格是最常用的需要与后台交互的组件，关于前端的方式不再赘述，可以参看element-ui官网，当前台页面搞好后，剩下的就是如何与后台交互进行数据的填充。
 
-
 #### 3.3 表格操作
+
+假分页：
+
+``` html
+<el-table :data="schema_list.slice((currentPage-1)*pagesize,currentPage*pagesize)"
+                  border
+                  style="width: 100%"
+                  @selection-change="handleSelectionChange">
+  <el-pagination backgroundlayout="prev, pager, next"
+                       @size-change="handleSizeChange"
+                       @current-change="handleCurrentChange"
+                       :current-page="currentPage"
+                       :page-sizes="[15, 50, 100]"
+                       :page-size="pagesize"
+                       :total="schema_list.length"></el-pagination>
+</el-table>
+
+<script>
+export default {
+  data() {
+    return {
+      currentPage: 1, // 初始页
+      pagesize: 15, //    每页的数据
+    }
+  },
+  methods: {
+    handleSizeChange: function (size) {
+      this.pagesize = size
+      console.log(this.pagesize) // 每页下拉显示数据
+    },
+    handleCurrentChange: function (currentPage) {
+      this.currentPage = currentPage
+      console.log(this.currentPage) // 点击第几页
+    },
+  }
+}
+</script>
+```
 
 ### 4 前后端分离和前后端调用
 
+前后端分离的意思是前端可以只负责自己的页面和交互，而后台则专注于逻辑处理。前端与后台通过api接口进行交互。
+
+#### 4.1 前端调用
+
+vue通过axios调用后台的接口，使用方法跟ajax一样:
+
+首先安装axios:
+
+``` shell
+npm install axios
+```
+
+然后在vue项目中导入:
+
+``` javascript
+// main.js
+import axios from 'axios'
+
+Vue.prototype.axios = axios
+```
+
+最后就可以进行调用了:
+
+``` javascript
+this.axios.get('/api/get_data').then((response) => {
+  console.log(response.data)
+})
+```
+
+在开发阶段，有时候前后端并不在一起，那么在访问后台接口时就需要其它域名的地址，此时需要配置代理：
+
+``` javascript
+// config/index.js
+
+proxyTable: {
+  '/api': {
+    target: 'http://XXXX:8080',
+    changeOrigin: true
+  },
+  pathRewrite: {
+    '^/api': ''
+  }
+}
+```
+
+#### 4.2 后端响应
+
+后端响应的部分可以参看restful api with django。
+
+#### 4.3 前后端部署
+
+当前后端开发完毕后，就可以进行部署了，执行`npm run build`进行构建，会生成dist目录，其中包含index.html首页文件和static静态目录。
+
+将dist目录拷贝到django根路径下，然后对django进行以下配置即可。
+
+1 配置根路由
+
+``` python
+from django.views.generic.base import TemplateView
+
+path('', TemplateView.as_view(template_name="index.html")),
+```
+
+2 添加模版路径
+
+``` python
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': ['dist'],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+```
+
+3 添加静态文件路径
+
+``` python
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'dist/static'),
+]
+```
+
+然后执行`python manage.py runserver 0:8080`就可以在浏览器中查看了，但是这样启动的服务器是不能处理高并发的，因此，需要用nginx进行代理，并用uwsgi进行转发。
