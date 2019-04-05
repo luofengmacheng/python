@@ -1,4 +1,4 @@
-## python中的yield from
+## 理解python中的yield from
 
 ### 1 yield from的基本用法
 
