@@ -24,3 +24,4 @@ free(buffers/cache) = free(Mem) + buffers(Mem) + cached(Mem)
 total(Swap) = used(Swap) + free(Swap)
 ```
 
+### 2 redis的string类型如何区分数字和字符串？
