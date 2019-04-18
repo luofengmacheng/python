@@ -1,6 +1,6 @@
 ## 用asyncio协程实现的网络爬虫
 
-> http://aosabook.org/en/500L/a-web-crawler-with-asyncio-coroutines.html
+> 翻译自：http://aosabook.org/en/500L/a-web-crawler-with-asyncio-coroutines.html
 
 ### 1 简介
 
@@ -49,3 +49,306 @@ except BlockingIOError:
 ```
 
 上面的代码将套接字设置为非阻塞，然后就会以非阻塞方式执行connect()函数，当连接没有建立结束时，就会抛出BlockingIOError异常，抛出该异常只是说操作还没有完成。上面的程序在处理完连接的异常后，程序就会往下执行，那么连接操作何时执行结束呢？只有当连接操作执行结束我们才能进行正常的收发数据。
+
+为了能够处理套接字的读写，可以使用IO多路复用，linux中IO多路复用有三种方式：select、poll、epoll，用法也类似，基本就是为关心的事件设置好回调：
+
+``` python
+from selectors import DefaultSelector, EVENT_WRITE
+
+selector = DefaultSelector()
+
+sock = socket.socket()
+sock.setblocking(False)
+try:
+    sock.connect(('xkcd.com', 80))
+except BlockingIOError:
+    pass
+
+def connected():
+    selector.unregister(sock.fileno())
+    print('connected!')
+
+selector.register(sock.fileno(), EVENT_WRITE, connected)
+```
+
+上面的代码为套接字设置连接建立成功的回调函数，同时为了处理各种事件，需要事件循环：
+
+``` python
+def loop():
+    while True:
+        events = selector.select()
+        for event_key, event_mask in events:
+            callback = event_key.data
+            callback()
+```
+
+事件循环中，用无限循环包含一个select()函数，selector.select()是个阻塞函数，如果已经注册的描述符的事件发生时该函数才会返回，然后遍历发生的事件，调用对应的回调函数。基于IO多路复用技术，程序可以在单线程中并发处理多个描述符的事件。
+
+### 5 用回调实现爬虫
+
+``` python
+import socket
+from urllib.parse import urlparse
+
+from selectors import DefaultSelector, EVENT_WRITE
+
+selector = DefaultSelector()
+
+class Fetcher:
+    def __init__(self, url):
+        self.response = b''
+        self.url = url
+        self.sock = None
+        url_res = urlparse(self.url)
+        self.host = url_res[1]
+        self.port = 80
+        path = url_res[2]
+        if path == '':
+            self.path = '/'
+        else:
+            self.path = path
+    
+    def fetch(self):
+    	"""
+    	发起连接请求，注册连接成功的回调函数
+    	"""
+        self.sock = socket.socket()
+        self.sock.setblocking(False)
+        try:
+            self.sock.connect((self.host, self.port))
+        except BlockingIOError:
+            pass
+
+        # Register next callback.
+        selector.register(self.sock.fileno(),
+                          EVENT_WRITE,
+                          self.connected)
+    
+    def connected(self, key, mask):
+    	"""
+    	连接成功后，发起GET页面请求，注册页面接受响应回调函数
+    	"""
+        print('connected!')
+        selector.unregister(key.fd)
+        request = 'GET {} HTTP/1.0\r\nHost: {}\r\n\r\n'.format(self.path, self.host)
+        self.sock.send(request.encode('ascii'))
+
+        # Register the next callback.
+        selector.register(key.fd,
+                          EVENT_READ,
+                          self.read_response)
+    
+    def read_response(self, key, mask):
+    	"""
+    	当描述符可读后，从描述符读取页面数据，解析页面中的链接
+    	然后发起一个新的链接的请求
+    	"""
+        global stopped
+
+        chunk = self.sock.recv(4096)  # 4k chunk size.
+        if chunk:
+            self.response += chunk
+        else:
+            selector.unregister(key.fd)  # Done reading.
+            links = self.parse_links()
+
+            # Python set-logic:
+            for link in links.difference(seen_urls):
+                urls_todo.add(link)
+                Fetcher(link).fetch()  # <- New Fetcher.
+
+            seen_urls.update(links)
+            urls_todo.remove(self.url)
+            if not urls_todo:
+                stopped = True
+    
+def loop():
+    while not stopped:
+        events = selector.select()
+        for event_key, event_mask in events:
+            callback = event_key.data
+            callback(event_key, event_mask)
+
+if __name__ == "__main__":
+
+    stopped = False
+    urls_todo = set(['http://www.baidu.com/'])
+    seen_urls = set(['http://www.baidu.com/'])
+
+    fetcher = Fetcher('http://www.baidu.com/')
+    fetcher.fetch()
+
+    loop()
+```
+
+上面是用回调实现的爬虫代码，主要的逻辑还是`事件循环 + 回调函数`，而且回调函数还有嵌套：
+
+* 发起连接请求，并注册连接成功回调函数
+* 连接成功后，发起获取页面的请求，并数据到达的回调函数
+* 当数据到达时，从描述符读取数据，进行解析进一步再处理
+
+上面的代码有什么问题呢？
+
+问题一：这里引入了一个名词：面条代码，意思是逻辑之间相互纠缠，不好理清
+
+问题二：整个爬取逻辑不是连贯的，是被分布在几个函数中，这几个函数之间必然需要传递部分变量，此处是通过实例对象自身存储的
+
+问题三：异常处理不好定位，如果事件循环中由于某个回调函数抛出异常，程序结束的堆栈中就只能看出是loop()函数中调用callback()失败，无法具体知道在实际函数调用中的栈帧
+
+通常我们会比较多线程和异步的效率，还有另一个问题也值得考虑：哪一个更可能出错。多线程需要处理好线程之间的同步，异步则需要应对上面提到的问题。
+
+### 6 协程
+
+因此，我们想结合多线程和异步的优势：即用同步的方式写异步的代码。
+
+协程的定义：能够停止和启动的子程序。
+
+协程相对于线程的特点：
+
+* 占用资源少
+* 线程由操作系统调度，有抢占式的特点；协程由程序员决定是否调度，因此它们之间是协作的关系
+
+``` python
+ @asyncio.coroutine
+ def fetch(self, url):
+    response = yield from self.session.get(url)
+    body = yield from response.read()
+```
+
+python中的协程也经历了几个过程：
+
+* 3.3 yield from
+* 3.4 asyncio
+* 3.5 async/await
+
+### 7 python中生成器的工作方式
+
+在理解python生成器的工作方式之前，需要先理解python函数的工作方式。python函数也是通过栈帧实现的，但是跟C函数不同的是：`python函数的栈帧是在堆上分配的，而C函数的栈帧是在栈上自动分配的`。因此，当函数退出时，栈帧还是存在的，可以由解释器控制，这是能够实现函数暂停并且启动的基础。
+
+解释器在执行python程序时会先编译为字节码，然后再执行，以下面的代码看下生成器的工作方式：
+
+``` python
+def gen_fn():
+    result = yield 1
+    print('result of yield: {}'.format(result))
+    result2 = yield 2
+    print('result of 2nd yield: {}'.format(result2))
+    return 'done'
+```
+
+当解释器在编译上面的代码时，如果发现函数中有yield关键字，就会给函数设置一个标志，表明该函数是个生成器。生成器的实现主要有两个元素：生成器函数的代码以及一个栈帧，在栈帧中保存着生成器当前执行的最后一条指令的索引。就是通过该索引实现生成器的暂停和执行。
+
+生成器有四种状态：已创建、执行、挂起、关闭。但是，我们常见的是三种状态：
+
+* 已创建，完成生成器对象的创建，还未执行
+* 挂起，生成器执行后，如果遇到yield时会停止，此时状态就是挂起
+* 关闭，当调用生成器的close()函数或者生成器执行结束，状态就是关闭
+
+当生成器创建后，必须要调用生成器的send()函数发送None预激生成器，当生成器遇到yield就会停止。当调用send(3)时，生成器启动执行，并且会将3返回给result，并继续执行到下一个yield，由于yield后面有参数2，因此，send(3)的返回值就时2。
+
+因此，通过堆上面的栈帧以及生成器栈帧中的最后执行指令的索引来实现生成器的暂停和启动。
+
+### 8 用生成器构建协程
+
+本节用生成器、Future、Task、yield from实现简化版的asyncio库。这里重点就是要理解为什么会有Future和Task以及yield from的作用。
+
+``` python
+class Future:
+	"""
+	Future用于存放结果和回调，表示未来要等待的结果
+	"""
+
+    def __init__(self):
+        self.result = None
+        self._callbacks = []
+
+    def add_done_callback(self, fn):
+        self._callbacks.append(fn)
+
+    def set_result(self, result):
+        self.result = result
+        for fn in self._callbacks:
+            fn(self)
+
+class Task:
+	"""
+	Task
+	"""
+
+    def __init__(self, coro):
+        self.coro = coro
+        f = Future()
+        f.set_result(None)
+        self.step(f)
+
+    def step(self, future):
+        try:
+            next_future = self.coro.send(future.result)
+        except StopIteration:
+            return
+
+        next_future.add_done_callback(self.step)
+
+class Fetcher:
+	"""
+	爬虫类
+	"""
+
+	def fetch(self):
+	    sock = socket.socket()
+	    sock.setblocking(False)
+	    try:
+	        sock.connect(('xkcd.com', 80))
+	    except BlockingIOError:
+	        pass
+
+	    f = Future()
+
+	    def on_connected():
+	        f.set_result(None)
+
+	    selector.register(sock.fileno(),
+	                        EVENT_WRITE,
+	                        on_connected)
+	    yield f
+	    selector.unregister(sock.fileno())
+	    print('connected!')
+
+fetcher = Fetcher('/353/')
+Task(fetcher.fetch())
+
+loop()
+```
+
+**将生成器对象作为Task的参数后，在Task的初始化函数中创建Future对象，然后调用fetcher.fetch()生成器的send()函数进行激活，fetch()生成器执行到yield f处停止，并将f返回给next_future，并为f设置回调函数Task.step()，当连接建立完成后，执行on_connected()函数，其中在执行set_result()时会执行f的回调函数即Task.step()，fetch()生成器继续执行，然后生成器会抛出StopInteration异常，异常被Task.step()捕获，程序执行结束**
+
+通过Task和Future可以让一个协程在需要的时候重新启动执行，使用协程时还有另一个很有用的需求，当执行某个子程序时，该子程序中包含另一个异步程序，这就需要用到yield from语句。使用该语句，可以将异步耗时的动作委托给子协程：
+
+``` python
+def gen_fn():
+    result = yield 1
+    print('result of yield: {}'.format(result))
+    result2 = yield 2
+    print('result of 2nd yield: {}'.format(result2))
+    return 'done'
+
+def caller_fn():
+	gen = gen_fn()
+    rv = yield from gen
+```
+
+当caller_fn()协程执行到yield from时，会等待gen协程执行结束并将gen协程的结果done返回给rv变量。
+
+因此，基于生成器的协程的使用规则是：当要等待事件的结果时，用yield，当要等待另一个生成器的结果时，使用yield from。因此，在这里开发人员需要对等待的对象进行区分，这显然是不方便的，为了统一(只要等待一个未来完成的结果，就使用yield from)，对Future类进行改造：
+
+``` python
+def __iter__(self):
+    yield self
+    return self.result
+```
+
+为什么改造成上面这样，`yield f`就可以写成`yield from f`呢？yield from可以理解为用for循环对生成器进行迭代，yield from就可以理解为`for + yield + 异常处理`，因此，当使用yield from f时就相当于获取了f的迭代器。
+
+### 9 使用asyncio库中的协程
+
+
