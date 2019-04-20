@@ -351,4 +351,144 @@ def __iter__(self):
 
 ### 9 使用asyncio库中的协程
 
+直接上最终可以跑的用asyncio库实现的爬虫程序：
 
+``` python
+import re
+import asyncio
+import aiohttp
+import pyquery
+
+from urllib.parse import urlparse
+
+from asyncio import Queue
+
+class Crawler:
+    def __init__(self, root_url, max_redirect):
+        # 并发执行协程的数量
+        self.max_tasks = 10
+        # 连接的最大重定向次数，初始化时进行传参，本例设置为0
+        # 当访问一个链接A时，将元祖(A, 10)放入队列，由于访问A时会重定向到B，
+        # 于是将(B, 9)放入队列，因此max_redirect用于控制一个链接重定向的次数
+        # 用于防止一个链接被重定向次数过多或者出现重定向循环？
+        self.max_redirect = max_redirect
+
+        # 多协程共享队列，协程从队列中获取url
+        self.q = Queue()
+
+        # 已经抓取和待抓取的url，防止重复抓取
+        self.seen_urls = set()
+
+        # 用于统计抓取的url数量
+        self.url_cnt = 1
+
+        # 初始化队列，此处跟直接调用self.q.put()是一样的
+        # put()和put_nowait()的区别在于：
+        # put()是个协程，当队列满时，应该要await放入完成时函数才实际返回
+        # put_nowait()是个普通函数，当队列满时直接抛出异常，当队列有空间时，则直接放入
+        self.q.put_nowait((root_url, self.max_redirect))
+    
+    async def crawl(self):
+        """
+        创建max_tasks个协程并发爬取
+        """
+        workers = [asyncio.Task(self.work())
+                   for _ in range(self.max_tasks)]
+
+        await self.q.join()
+
+        # 由于work()协程是个死循环，因此，当待爬取队列为空时协程的状态就是GEN_SUSPEND
+        # 当当前协程直接退出时，关闭这些暂停的任务就会报异常，调用Task.cancel()就相当于调用协程的close()
+        for w in workers:
+            w.cancel()
+    
+    async def work(self):
+        while True:
+            # 从队列中获取URL，队列的get()函数是个协程
+            # 当队列中有元素时get()协程才会返回，否则协程会暂停
+            url, max_redirect = await self.q.get()
+
+            await self.fetch(url, max_redirect)
+
+            # 对获取到的url完成爬取后，调用队列的task_done()
+            # Queue.get()用于从队列中获取任务，Queue.task_done()则告诉队列任务已经处理完成
+            # Queue.join()也是个协程，需要根据队列中未完成的任务计数器进行判断
+            # 当向队列中放入元素时，_unfinished_tasks加1
+            # 当从队列中获取元素并调用task_done()后，_unfinished_tasks减1
+            # 当队列中有元素时，Queue.join()会阻塞，直到_unfinished_tasks为0
+            self.q.task_done()
+    
+    async def parse_links(self, response, cur_url):
+        """从爬取的网页内容中分析出链接
+        1 由于读取网页内容也是比较耗时的，而且这里response.text()是个协程
+        可以await读取网页内容，用pyquery分析出其中的<a>元素，然后获取元素的href
+        2 通过正则表达式判断是否为合法的url，如果是合法的url，为了减少爬取的链接数，只抓取首页页面
+        """
+        self.url_cnt += 1
+        response = await response.text()
+        if not response:
+            return set()
+        doc = pyquery.PyQuery(response)
+        ret = set()
+        for link in doc('a'):
+            url = link.get('href')
+            if url and re.match(r'^https?:/{2}\w.+$', url):
+                url_item = urlparse(url)
+                ret.add(url_item.scheme + '://' + url_item.netloc)
+        return ret
+    
+    async def fetch(self, url, max_redirect):
+        """使用aiohttp抓取网页
+        1 进行抓取时，aiohttp库如果遇到重定向默认会自动处理，这里由我们自己处理，因为可以对中间的链接也可以进行过滤并分析
+        2 进行抓取时，要设置超时时间，而且还要对asyncio.TimeoutError异常进行处理
+        3 此处通过状态码判断是否为重定向
+        """
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, allow_redirects=False, timeout=10) as response:
+
+                    if response.status in [301, 302, 307]:
+                        # 如果当前爬取的url是重定向，则获取重定向的链接并且通过已知的url决定是否放入待爬取队列
+                        if max_redirect > 0:
+                            next_url = response.headers['location']
+                            if next_url in self.seen_urls:
+                                return
+
+                            self.seen_urls.add(next_url)
+
+                            self.q.put_nowait((next_url, max_redirect - 1))
+                    else:
+                        # 如果当前爬取的是正常的url，则分析出其中的链接，通过与已知链接进行对比得出需要爬取的url
+                        links = await self.parse_links(response, url)
+                        for link in links.difference(self.seen_urls):
+                            self.q.put_nowait((link, self.max_redirect))
+                        
+                        # 将刚才分析出的链接放入已知链接集合中
+                        # set的add和update的区别：
+                        # add()会将参数作为一个整体放入集合中
+                        # update()会将参数进行迭代遍历后的元素放入集合(相当于将一个集合放入另一个集合)
+                        self.seen_urls.update(links)
+            except asyncio.TimeoutError:
+                print('crawl ', url, ' timeout')
+            except Exception as e:
+                print('other error occur')
+            
+def main():
+    loop = asyncio.get_event_loop()
+
+    crawler = Crawler('http://xkcd.com', 5)
+
+    loop.run_until_complete(crawler.crawl())
+
+if __name__ == "__main__":
+    main()
+```
+
+
+### 10 总结
+
+`pip install -i http://pypi.douban.com/simple/ --trusted-host=pypi.douban.com pyquery`
+
+`现代程序大多都是IO密集型而非CPU密集型`。而使用python多线程会带来一些问题：GIL	的存在使得无法同时执行计算，而抢占式切换会使得需要对线程进行同步。因此，异步可以用于解决这些问题，但是基于回调的异步在代码扩展和调试方面是不够友好的。而`协程是可以用同步编码方式进行异步编程`。
+
+yield from语句可以告诉解释器可以在哪里停止然后启动执行。python3.4引入的asyncio库，python3.5则将协程内置于语言中，并且为了与生成器进行区分，引入了`async def`和`await`，它们分别用于替代`@asyncio.coroutine`和`yield from`，并且协程装饰器会在python3.10中去掉。虽然语法有些变化，但是核心思想没有变化。
