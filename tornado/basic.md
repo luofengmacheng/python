@@ -58,4 +58,102 @@ class Application(tornado.web.Application):
 
 ### 7 部署
 
+谈到tornado的部署就要谈到它与django和flask的区别了。
 
+django和flask只是开发框架，提供了一种方式可以让我们方便的编写业务代码，django的优点是自带管理台后端，而且集成了web框架的几乎所有的功能，flask的优点在于小巧，用户可以在需要的时候再使用自己想要的功能，而且它也自称是微框架。
+
+而tornado与它们的两者的很大的区别就是：torando不仅是开发框架，而且是web服务器。因此再部署时，django和flask需要另外再部署web服务器，而tornado则不需要，因此，它们的常见的部署方式是：
+
+```
+uWSGI/gunicorn -> django/flask
+tornado
+```
+
+但是由于nginx的高性能，有反向代理的功能，并且提供负载均衡，对于静态文件的性能很高，因此它们的部署方式就变成了：
+
+```
+nginx -> uWSGI/gunicorn -> django/flask
+nginx -> tornado
+```
+
+因此，部署tornado包含tornado自身的部署和nginx中的配置。
+
+tornado自身的部署有两种方式：以守护进程启动；以前台进程启动并且用监控软件管理。如果以守护进程启动：`nohup python server.py > /tmp/server.log 2>/tmp/server.error &`，需要自己写监控程序。如果以前台进程启动，可以在docker中启动或者是使用类似supervisor等进程进行监控。
+
+部署完tornado，就需要在nginx中将路由导向tornado，根据开发方式又有所区别：
+
+* 如果不是前后端分离的方式，也就是使用tornado自身的模板系统，就可以将其中的静态文件，例如js、css等，单独放在一个目录，然后在nginx中分成两个路由，分别导向静态文件和动态文件。
+* 如果是前后端分离的方式，tornado只提供api，前端负责调用api，前台编译构建完成后会得到一个首页index.html和一个static目录(其中包含js和css)，这种方式的好处就是自动将静态目录给独立出来，此时就需要在nginx中配置两个URL：
+
+方式一：将默认路径路由到静态目录，后台访问的URL路由到tornado
+
+```
+# 所有的路径都导入到静态目录
+location / {
+    root /data/www/dist;
+}
+
+# 后端api请求就给到tornado进程处理
+location /api/ {
+    proxy_pass http://localhost:8000;
+}
+```
+
+方式二：将默认路径路由到
+
+```
+# 指定静态文件路由
+# ^~ 表示如果匹配到了这条路由则不继续匹配
+location ^~ /static/ {
+    # 在location中的路径尽量使用alias，而不用root
+    # 例如，如果这里使用root，就要设置路径/data/www/dist/
+    # 但是这样不好理解，而且如果实际的最终路径名不是static就要通过软链接来实现了
+    alias /data/www/dist/static/;
+
+    # 告诉客户端缓存时间长度，通常针对静态资源设置
+    expires 24h;
+}
+
+# 根路径可以匹配任何路由，因此一个网站对于除了静态资源以外的资源都可以匹配根路径
+# 
+location / {
+    index index.html
+
+    proxy_pass_header Server;
+
+    proxy_set_header Host $http_host;
+
+    proxy_redirect off;
+
+    proxy_set_header X-Real-IP $remote_addr;
+
+    # 把请求方向代理传给tornado服务器，负载均衡
+
+    proxy_pass http://tornados;
+
+}
+```
+
+### 8 nginx中部分配置
+
+#### 8.1 日志格式
+
+```
+log_format main    '$status|$scheme://$http_host|$remote_addr|$upstream_addr|nginxProxy|$uri|$time_local|$request_time|$http_Tencent_LeakScan|$arg_offer_id|url="$r
+equest",body="$request_body"|s=$bytes_sent|"$http_user_agent"';
+```
+
+#### 8.2 日志按月分割
+
+```
+access_log      /usr/local/nginx/logs/access-$year$month.log  main;
+
+if ($time_iso8601 ~ "^(\d{4})-(\d{2})-(\d{2})") {
+    set $year $1;
+    set $month $2;
+}
+```
+
+#### 8.3 关于index指令
+
+index指令
