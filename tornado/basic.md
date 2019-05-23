@@ -156,4 +156,26 @@ if ($time_iso8601 ~ "^(\d{4})-(\d{2})-(\d{2})") {
 
 #### 8.3 关于index指令
 
-index指令
+当访问的URL以`/`结尾时，就会访问匹配的路由中index指令后的文件，如果找到了其中的某个文件，就会发起内部重定向。
+
+如下例子，后端是php，管理进程是php-fpm，如果访问`http://localhost`时，路径就是`/`，此时就会匹配第一条路由，发现index.php存在，就会内部重定向到`http://localhost/index.php`，此时就会匹配第二条路由，就会访问到后端的默认控制器。
+
+```
+location / {
+    index index.php index.html;
+}
+location ~ .*\.php {
+    fastcgi_index     index.php;
+    fastcgi_pass      127.0.0.1:9000;
+    fastcgi_connect_timeout 300;
+    fastcgi_send_timeout 300;
+    fastcgi_read_timeout    300;
+    fastcgi_split_path_info ^((?U).+.php)(/?.+)$;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param PATH_INFO $fastcgi_path_info;
+    fastcgi_param PATH_TRANSLATED $document_root$fastcgi_path_info;
+    include           fastcgi.conf;
+
+    gzip on;
+}
+```
