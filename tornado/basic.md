@@ -27,6 +27,7 @@ proj_root/
 	handlers/ ---- 路由映射
 	models/ ---- 模型，与数据库交互
 	libs/ ---- 库文件，做一些封装
+    templates/ ---- 模版目录
 	requirements.txt ---- 依赖的库文件
 	server.py ---- 启动文件
 
