@@ -75,6 +75,181 @@ LRU是Least Recently Used(最近最少使用)的缩写，它是一种缓存换�
 * 双向链表：每次插入数据时将数据插入到链头，每次访问数据时，将数据移到链头，当需要淘汰数据时，就淘汰链尾。采用双向链表的原因是需要删除链尾时，可以用O(1)时间进行删除操作。同样，用链表实现时，访问的时间复杂度是O(n)。
 * 双向链表+哈希表：为了解决访问的时间复杂度，引入了哈希表(python是dict()，java中是hashmap)。当访问某个元素时，通过哈希表进行判断，此时的时间复杂度是O(1)，如果它在哈希表中，则跟上面链表的操作方式一样，移动到链头，如果它不在哈希表中，则直接插入到链头。如果需要将元素移出LRU，则删除链表尾部的元素，并将元素从哈希表中删除。
 
+``` python
+#!/usr/bin/env python
+
+import random
+
+class ListNode:
+  def __init__(self, addr, value):
+    self.value = value
+    self.addr = addr
+    self.prev = None
+    self.next = None
+
+class List:
+  def __init__(self, data):
+    self.head = None
+    for k, v in data.items():
+      node = ListNode(k, v)
+      node.prev = node.next = node
+      if self.head is None:
+        self.head = node
+      else:
+        node.prev = self.head.prev
+        node.next = self.head
+        self.head.prev.next = node
+        self.head.prev = node
+  
+  def __repr__(self):
+    node = self.head
+    s = ""
+
+    if node is None:
+      return s
+    while node.next is not self.head:
+      s += str(node.addr) + " " + str(node.value) + "\t"
+      node = node.next
+    s += str(node.addr) + " " + str(node.value) + "\t"
+    return s
+  
+  def insert_head(self, addr, value):
+    """ 在链表头部插入节点
+    """
+    print("insert head:" + str(addr) + " " + str(value))
+    node = ListNode(addr, value)
+
+    if self.head is None:
+      node.next = node.prev = node
+      self.head = node
+    else:
+      node.next = self.head
+      node.prev = self.head.prev
+      self.head.prev.next = node
+      self.head.prev = node
+      self.head = node
+  
+  def delete_node(self, addr):
+    """ 删除某个地址的节点，并返回节点中的值
+    """
+    if self.head is None:
+      return False, 0
+    
+    if self.head.next is self.head:
+      if self.head.addr == addr:
+        node = self.head
+        node.next = node.prev = None
+        self.head = None
+        return True, node.value
+      else:
+        return False, 0
+    node = self.head
+    while node.next is not self.head:
+      if node.addr == addr:
+        val = node.value
+        node.next.prev = node.prev
+        node.prev.next = node.next
+        if node is self.head:
+          self.head = node.next
+        return True, val
+      node = node.next
+    if node is not None and node.next is self.head:
+      status, data = self.delete_tail()
+      if status:
+        return True, data
+    return False, 0
+  
+  def delete_tail(self):
+    """ 删除链表尾部的节点
+    """
+    if self.head is None:
+      """ 如果链表为空，则直接返回
+      """
+      return False, 0
+
+    if self.head.next == self.head:
+      """ 如果链表只有一个元素，则直接将剩余的一个节点删除
+      """
+      node = self.head
+      self.head.next = None
+      self.head.prev = None
+      self.head = None
+      return True, node.addr
+    
+    tail = self.head.prev
+    tail.prev.next = tail.next
+    tail.next.prev = tail.prev
+    tail.prev = tail.next = None
+    return True, tail.addr
+
+class LRUCache:
+  def __init__(self, cap=5):
+    self.list = List({})
+    self.hash = dict()
+    self.size = 0
+    self.capacity = cap
+  
+  def stub_backend(self, addr):
+    """ 后端存储的桩函数
+    """
+    return random.randint(0, 100)
+  
+  def access(self, addr):
+    """ 访问某个地址对应的数据
+    """
+    if addr not in self.hash:
+      """ 如果要访问的数据不在LRU中，则从后端存储中获取
+      还需要判断缓存空间是否足够，如果足够，则直接执行以下操作，如果不够，则需要将链表尾部的元素删除
+      1 将数据插入到哈希表
+      2 将数据插入到链表头部
+      """
+      data = self.stub_backend(addr)
+      if self.size >= self.capacity:
+        """ 缓存空间不够，需要将链表尾部节点删除
+        """
+        status, del_addr = self.list.delete_tail()
+        if status:
+          self.size -= 1
+          del self.hash[del_addr]
+
+      self.hash[addr] = data
+      self.list.insert_head(addr, data)
+      self.size += 1
+      return data
+    else:
+      """ 如果要访问的数据在LRU中，则将要访问的数据从链表中删除并插入到链表头部
+      """
+      status, data = self.list.delete_node(addr)
+      self.list.insert_head(addr, data)
+      return data
+
+if __name__ == "__main__":
+    cache = LRUCache()
+    cache.access("a")
+    print(cache.list)
+    print(cache.hash)
+    cache.access("b")
+    print(cache.list)
+    print(cache.hash)
+    cache.access("c")
+    print(cache.list)
+    print(cache.hash)
+    cache.access("d")
+    print(cache.list)
+    print(cache.hash)
+    cache.access("e")
+    print(cache.list)
+    print(cache.hash)
+
+    cache.access("d")
+    print(cache.list)
+    print(cache.hash)
+
+    cache.access("f")
+    print(cache.list)
+    print(cache.hash)
+```
+
 3 (2019年6月17日)使用python判断矩阵是否满秩，并计算矩阵的秩？
 
 4 (2019年6月17日)使用shell每5分钟获取本机访问其它数据库的程序？
