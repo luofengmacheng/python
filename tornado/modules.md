@@ -150,7 +150,7 @@ HTTPServer派生自TCPServer和httputil.HTTPServerConnectionDelegate：对于TCP
 
 ### 6 ioloop
 
-在Tornado6.0中，
+在Tornado6.0中，ioloop.IOLoop就是对asyncio事件循环的封装
 
 ### 7 wsgi
 
@@ -162,7 +162,7 @@ WSGI是Web Server和Web Framework之间的通信规范：
 
 Tornado既可以作为Web Server，又可以作为Web Framework，而Tornado中的wsgi模块可以让Tornado称为Web Server，在其上去跑其它的业务处理框架。
 
-这里以Django为例，先说明Django是如何给出可调用对象的，再说明Tornado如何使用该对象进行整合处理，最后再说明Tornado如何实现该：
+这里以Django为例，先说明Django是如何给出可调用对象的，再说明如何在Tornado中执行Django框架，最后再说明Tornado如何实现WSGI：
 
 #### 7.1 Django中的wsgi
 
@@ -195,7 +195,8 @@ def run(port):
     wsgi_app = get_wsgi_application()
     container = tornado.wsgi.WSGIContainer(wsgi_app)
 
-    # 将WSGIContainer对象放到路由配置中并封装成应用
+    # 将请求的路由转给web.FallbackHandler，并传递container参数
+    # 而在web.FallbackHandler中，在重载的prepare方法中，调用container
     tornado_app = tornado.web.Application(
         [
             ('.*', tornado.web.FallbackHandler, dict(fallback=container)),
@@ -217,3 +218,12 @@ Tornado实现WSGI需要实现以下三个部分：
 * 从请求中解析出WSGI规范要求的请求信息，并生成对应的字典
 * 实现响应头部的调用函数
 * 调用Web Framework的对象，传入请求字典和响应头部的调用函数，就可以得到响应体，然后对响应头部和响应体进行额外的处理就可以返回给调用方
+
+#### 7.4 小结
+
+下面以Tornado为Web Server，Django为Web Framework总结下整个请求处理流程：
+
+* Tornado将实现WSGI的部分封装为wsgi.WSGIContainer类
+* Tornado会为所有请求路径创建一个特殊的请求处理器FallbackHandler，并用wsgi.WSGIContainer类对象作为初始化参数
+* 当Tornado收到请求后，调用FallbackHandler的prepare()方法，该方法中会调用wsgi.WSGIContainer
+* 在wsgi.WSGIContainer的__call_方法中调用Django框架提供的wsgi对象，得到响应结果
