@@ -2,9 +2,12 @@
 
 import tornado.web
 from .baseHandler import BaseHandler
-import models.database_mod
+
+from models.instance import Instance
 
 class MainHandler(BaseHandler):
 
    def get(self):
-       self.write("It works!")
+       data = self.db['pkgrelease'].query(Instance).all()
+       print(data)
+       self.write("query ok")

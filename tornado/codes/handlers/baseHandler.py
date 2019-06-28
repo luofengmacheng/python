@@ -3,5 +3,8 @@
 import tornado.web
 
 class BaseHandler(tornado.web.RequestHandler):
-    def db(self, db_name):
+
+    @property
+    def db(self):
+        return self.application.db
         
