@@ -17,3 +17,11 @@ Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) a
 * 到openssl官网下载包进行安装
 * 下载python的安装包，进行解压后，去掉其中的Modules/Setup.dist中的ssl的注释
 * 对python进行编译：`./configure --with-openssl=/usr/local/ssl`
+
+详细安装步骤如下：
+
+* yum update
+* yum install -y lrzsz gcc libffi-devel openssl-devel
+* cd openssl-1.1.1c &&  ./config --prefix=/usr/local/openssl && make && make install
+* 编辑Python安装包中的Modules/Setup.dist，去掉ssl的注释
+* cd Python-3.7.2 && ./configure && make && make install
